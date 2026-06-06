@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG 路径动画与轨迹编辑工具</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>SVG 路径动画编辑器</h1>
+            <div class="header-controls">
+                <button id="btn-play" class="btn btn-primary">▶ 播放</button>
+                <button id="btn-pause" class="btn">⏸ 暂停</button>
+                <button id="btn-reset" class="btn">↺ 重置</button>
+                <span class="time-display">
+                    <span id="current-time">0.00</span>s / <span id="total-time">5.00</span>s
+                </span>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="left-panel">
+                <div class="toolbar">
+                    <div class="tool-group">
+                        <span class="tool-label">绘制模式:</span>
+                        <button id="tool-select" class="btn btn-tool active">✋ 选择</button>
+                        <button id="tool-add" class="btn btn-tool">➕ 添加锚点</button>
+                        <button id="tool-delete" class="btn btn-tool">🗑 删除</button>
+                    </div>
+                    <div class="tool-group">
+                        <span class="tool-label">路径类型:</span>
+                        <select id="path-type">
+                            <option value="bezier">贝塞尔曲线</option>
+                            <option value="line">直线</option>
+                        </select>
+                    </div>
+                    <div class="tool-group">
+                        <span class="tool-label">路径库:</span>
+                        <select id="preset-paths">
+                            <option value="">-- 选择预设路径 --</option>
+                            <option value="circle">⚪ 圆形</option>
+                            <option value="heart">❤ 爱心</option>
+                            <option value="star">⭐ 星形</option>
+                            <option value="wave">〰️ 波浪</option>
+                            <option value="spiral">🌀 螺旋</option>
+                            <option value="signature">✍️ 签名笔迹</option>
+                        </select>
+                        <button id="btn-load-preset" class="btn btn-small">加载</button>
+                    </div>
+                    <div class="tool-group">
+                        <button id="btn-clear-path" class="btn btn-danger btn-small">清空路径</button>
+                        <button id="btn-add-object" class="btn btn-success btn-small">+ 添加动画对象</button>
+                    </div>
+                </div>
+
+                <div class="canvas-container">
+                    <svg id="main-canvas" width="800" height="600" viewBox="0 0 800 600">
+                        <defs>
+                            <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                                <polygon points="0 0, 10 3.5, 0 7" fill="#666"/>
+                            </marker>
+                        </defs>
+                        <rect width="800" height="600" fill="#fafafa" stroke="#ddd" stroke-width="1"/>
+                        <g id="grid-layer"></g>
+                        <g id="paths-layer"></g>
+                        <g id="handles-layer"></g>
+                        <g id="objects-layer"></g>
+                    </svg>
+                    <div class="canvas-hint" id="canvas-hint">点击画布添加锚点，开始绘制路径</div>
+                </div>
+            </div>
+
+            <div class="right-panel">
+                <div class="panel-tabs">
+                    <button class="tab-btn active" data-tab="objects">对象列表</button>
+                    <button class="tab-btn" data-tab="timeline">时间轴</button>
+                    <button class="tab-btn" data-tab="source">SVG 源码</button>
+                    <button class="tab-btn" data-tab="export">导出</button>
+                </div>
+
+                <div class="panel-content">
+                    <div class="tab-pane active" id="tab-objects">
+                        <div id="objects-list" class="objects-list"></div>
+                    </div>
+
+                    <div class="tab-pane" id="tab-timeline">
+                        <div class="timeline-container">
+                            <div class="timeline-header">
+                                <div class="timeline-scale" id="timeline-scale"></div>
+                            </div>
+                            <div class="timeline-tracks" id="timeline-tracks"></div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane" id="tab-source">
+                        <div class="source-controls">
+                            <label><input type="checkbox" id="show-anim-source" checked> 包含动画</label>
+                            <label><input type="checkbox" id="show-controls-source"> 包含控制柄</label>
+                        </div>
+                        <textarea id="svg-source" readonly></textarea>
+                    </div>
+
+                    <div class="tab-pane" id="tab-export">
+                        <div class="export-options">
+                            <div class="export-section">
+                                <h3>导出 SMIL 动画 SVG</h3>
+                                <p>纯 SVG 动画，无需 JavaScript</p>
+                                <button class="btn btn-primary" id="btn-export-smil">导出 SMIL SVG</button>
+                            </div>
+                            <div class="export-section">
+                                <h3>导出 CSS 关键帧动画</h3>
+                                <p>使用 CSS @keyframes 实现动画</p>
+                                <button class="btn btn-primary" id="btn-export-css">导出 CSS + HTML</button>
+                            </div>
+                            <div class="export-section">
+                                <h3>导出带 JS 控制的 HTML</h3>
+                                <p>包含播放/暂停/重置控制</p>
+                                <button class="btn btn-primary" id="btn-export-js">导出完整 HTML</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="object-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3 id="modal-title">编辑动画对象</h3>
+            <div class="form-group">
+                <label>对象名称</label>
+                <input type="text" id="obj-name" placeholder="输入对象名称">
+            </div>
+            <div class="form-group">
+                <label>对象类型</label>
+                <select id="obj-type">
+                    <option value="circle">圆形</option>
+                    <option value="square">方形</option>
+                    <option value="triangle">三角形</option>
+                    <option value="diamond">菱形</option>
+                    <option value="star">星形</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>对象颜色</label>
+                <input type="color" id="obj-color" value="#ff6b6b">
+            </div>
+            <div class="form-group">
+                <label>对象大小</label>
+                <input type="range" id="obj-size" min="5" max="50" value="20">
+                <span id="obj-size-value">20</span>px
+            </div>
+            <div class="form-group">
+                <label>绑定路径</label>
+                <select id="obj-path"></select>
+            </div>
+            <div class="form-group">
+                <label>起始时刻 (秒)</label>
+                <input type="number" id="obj-start" min="0" step="0.1" value="0">
+            </div>
+            <div class="form-group">
+                <label>动画时长 (秒)</label>
+                <input type="number" id="obj-duration" min="0.1" step="0.1" value="3">
+            </div>
+            <div class="form-group">
+                <label>速度倍率</label>
+                <input type="range" id="obj-speed" min="0.1" max="3" step="0.1" value="1">
+                <span id="obj-speed-value">1.0</span>x
+            </div>
+            <div class="form-group">
+                <label>缓动函数</label>
+                <select id="obj-easing">
+                    <option value="linear">线性 (linear)</option>
+                    <option value="ease">缓动 (ease)</option>
+                    <option value="ease-in">缓入 (ease-in)</option>
+                    <option value="ease-out">缓出 (ease-out)</option>
+                    <option value="ease-in-out">缓入缓出 (ease-in-out)</option>
+                    <option value="bounce">弹跳 (bounce)</option>
+                    <option value="elastic">弹性 (elastic)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>循环模式</label>
+                <select id="obj-loop">
+                    <option value="none">不循环</option>
+                    <option value="repeat">重复播放</option>
+                    <option value="alternate">往返播放</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="obj-orient"> 朝向随路径切线方向</label>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" id="modal-cancel">取消</button>
+                <button class="btn btn-primary" id="modal-save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/paths.js"></script>
+    <script src="js/path-editor.js"></script>
+    <script src="js/animation-engine.js"></script>
+    <script src="js/timeline.js"></script>
+    <script src="js/exporter.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
