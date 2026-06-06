@@ -246,46 +246,77 @@ function pathPointsToD(points, closed = false) {
     return d;
 }
 
-function getPointOnPath(points, t) {
-    if (!points || points.length < 2) return { x: 0, y: 0, angle: 0 };
-    
-    const totalLength = getPathTotalLength(points);
-    const targetLength = t * totalLength;
-    let currentLength = 0;
+function getSegmentInfo(points) {
+    const segments = [];
+    let totalLength = 0;
     
     for (let i = 1; i < points.length; i++) {
         const prev = points[i - 1];
         const curr = points[i];
         
-        let segLength;
         let segPoints;
+        let segLengths = [];
+        let segTotalLength = 0;
         
         if (prev.type === 'bezier' && curr.type === 'bezier' && prev.cpOut && curr.cpIn) {
             segPoints = getCubicBezierPoints(prev, curr);
-            segLength = segPoints.length - 1;
         } else if (prev.type === 'bezier' && prev.cpOut) {
             segPoints = getQuadraticBezierPoints(prev, curr);
-            segLength = segPoints.length - 1;
         } else {
             segPoints = [prev, curr];
-            segLength = Math.hypot(curr.x - prev.x, curr.y - prev.y);
         }
         
-        if (currentLength + segLength >= targetLength) {
-            const localT = (targetLength - currentLength) / segLength;
-            const idx = Math.floor(localT * (segPoints.length - 1));
-            const p1 = segPoints[Math.min(idx, segPoints.length - 1)];
-            const p2 = segPoints[Math.min(idx + 1, segPoints.length - 1)];
-            const f = (localT * (segPoints.length - 1)) % 1;
-            
-            const x = p1.x + (p2.x - p1.x) * f;
-            const y = p1.y + (p2.y - p1.y) * f;
-            const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
-            
-            return { x, y, angle };
+        for (let j = 1; j < segPoints.length; j++) {
+            const len = Math.hypot(segPoints[j].x - segPoints[j-1].x, segPoints[j].y - segPoints[j-1].y);
+            segLengths.push(len);
+            segTotalLength += len;
         }
         
-        currentLength += segLength;
+        segments.push({
+            index: i - 1,
+            points: segPoints,
+            lengths: segLengths,
+            totalLength: segTotalLength,
+            startLength: totalLength
+        });
+        
+        totalLength += segTotalLength;
+    }
+    
+    return { segments, totalLength };
+}
+
+function getPointOnPath(points, t) {
+    if (!points || points.length < 2) return { x: 0, y: 0, angle: 0 };
+    
+    const { segments, totalLength } = getSegmentInfo(points);
+    const targetLength = Math.max(0, Math.min(1, t)) * totalLength;
+    
+    for (const seg of segments) {
+        if (seg.startLength + seg.totalLength >= targetLength) {
+            const localTarget = targetLength - seg.startLength;
+            let accumulated = 0;
+            
+            for (let j = 0; j < seg.lengths.length; j++) {
+                if (accumulated + seg.lengths[j] >= localTarget) {
+                    const f = seg.lengths[j] > 0 ? (localTarget - accumulated) / seg.lengths[j] : 0;
+                    const p1 = seg.points[j];
+                    const p2 = seg.points[j + 1];
+                    
+                    const x = p1.x + (p2.x - p1.x) * f;
+                    const y = p1.y + (p2.y - p1.y) * f;
+                    const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+                    
+                    return { x, y, angle };
+                }
+                accumulated += seg.lengths[j];
+            }
+            
+            const lastPoint = seg.points[seg.points.length - 1];
+            const prevPoint = seg.points[seg.points.length - 2];
+            const angle = Math.atan2(lastPoint.y - prevPoint.y, lastPoint.x - prevPoint.x) * 180 / Math.PI;
+            return { x: lastPoint.x, y: lastPoint.y, angle };
+        }
     }
     
     const last = points[points.length - 1];
@@ -295,27 +326,8 @@ function getPointOnPath(points, t) {
 function getPathTotalLength(points) {
     if (!points || points.length < 2) return 0;
     
-    let length = 0;
-    for (let i = 1; i < points.length; i++) {
-        const prev = points[i - 1];
-        const curr = points[i];
-        
-        if (prev.type === 'bezier' && curr.type === 'bezier' && prev.cpOut && curr.cpIn) {
-            const segPoints = getCubicBezierPoints(prev, curr);
-            for (let j = 1; j < segPoints.length; j++) {
-                length += Math.hypot(segPoints[j].x - segPoints[j-1].x, segPoints[j].y - segPoints[j-1].y);
-            }
-        } else if (prev.type === 'bezier' && prev.cpOut) {
-            const segPoints = getQuadraticBezierPoints(prev, curr);
-            for (let j = 1; j < segPoints.length; j++) {
-                length += Math.hypot(segPoints[j].x - segPoints[j-1].x, segPoints[j].y - segPoints[j-1].y);
-            }
-        } else {
-            length += Math.hypot(curr.x - prev.x, curr.y - prev.y);
-        }
-    }
-    
-    return length;
+    const { totalLength } = getSegmentInfo(points);
+    return totalLength;
 }
 
 function getCubicBezierPoints(p0, p3) {

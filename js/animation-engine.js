@@ -1,9 +1,13 @@
 const EasingFunctions = {
     linear: t => t,
-    ease: t => t * (2 - t),
+    ease: t => {
+        const c1 = 1.70158;
+        const c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    },
     'ease-in': t => t * t,
-    'ease-out': t => t * (2 - t),
-    'ease-in-out': t => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t,
+    'ease-out': t => 1 - (1 - t) * (1 - t),
+    'ease-in-out': t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
     bounce: t => {
         if (t < 1 / 2.75) return 7.5625 * t * t;
         if (t < 2 / 2.75) return 7.5625 * (t -= 1.5 / 2.75) * t + 0.75;
