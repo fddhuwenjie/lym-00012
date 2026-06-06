@@ -23,18 +23,24 @@ class Exporter {
         return '1';
     }
     
+    getExpandedObjects() {
+        return this.animationEngine.getExpandedObjects();
+    }
+    
     getSMILAnimation() {
         const { animationEngine, pathEditor } = this;
-        if (animationEngine.objects.length === 0) return '';
+        const objects = this.getExpandedObjects();
+        if (objects.length === 0) return '';
         
         let smil = '';
         
-        for (const obj of animationEngine.objects) {
+        for (const obj of objects) {
             const path = pathEditor.paths.find(p => p.id === obj.pathId);
             if (!path || path.points.length < 2) continue;
             
+            const group = animationEngine.groups.find(g => g.id === obj.originalGroupId);
             const pathD = pathPointsToD(path.points, path.closed);
-            const duration = (obj.duration / obj.speed).toFixed(2);
+            const duration = obj.duration.toFixed(2);
             const size = obj.size;
             const easing = this.getEasingAttribute(obj.easing);
             
@@ -134,6 +140,7 @@ class Exporter {
     
     exportCSS() {
         const { animationEngine, pathEditor } = this;
+        const objects = this.getExpandedObjects();
         
         let keyframes = '';
         let elements = '';
@@ -141,14 +148,14 @@ class Exporter {
         
         const totalDuration = animationEngine.totalDuration;
         
-        for (let i = 0; i < animationEngine.objects.length; i++) {
-            const obj = animationEngine.objects[i];
+        for (let i = 0; i < objects.length; i++) {
+            const obj = objects[i];
             const path = pathEditor.paths.find(p => p.id === obj.pathId);
             if (!path || path.points.length < 2) continue;
             
             const pathD = pathPointsToD(path.points, path.closed);
             const animName = `anim_${obj.id}`;
-            const duration = (obj.duration / obj.speed);
+            const duration = obj.duration;
             const size = obj.size;
             
             const steps = 50;
@@ -256,9 +263,17 @@ ${elements}
             closed: p.closed
         }));
         
-        const objectsData = animationEngine.objects.map(o => ({
-            ...o
+        const groupsData = animationEngine.groups.map(g => ({
+            ...g,
+            objectIds: [...g.objectIds]
         }));
+        
+        const objectsData = this.getExpandedObjects().map(o => ({
+            ...o,
+            originalGroupId: o.groupId
+        }));
+        
+        const hasTrails = objectsData.some(o => o.trail);
         
         let html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -312,6 +327,7 @@ ${elements}
         }
         .animated-object { transition: filter 0.2s; }
         .animated-object:hover { filter: drop-shadow(0 0 8px rgba(0,0,0,0.3)); }
+        .particle { pointer-events: none; }
     </style>
 </head>
 <body>
@@ -325,15 +341,25 @@ ${elements}
         <svg id="canvas" width="800" height="600" viewBox="0 0 800 600">
             <rect width="800" height="600" fill="#fafafa" stroke="#ddd" stroke-width="1"/>
             <g id="paths-layer"></g>
+            <g id="particles-layer"></g>
             <g id="objects-layer"></g>
         </svg>
     </div>
 
     <script>
         const pathsData = ${JSON.stringify(pathsData, null, 2)};
+        const groupsData = ${JSON.stringify(groupsData, null, 2)};
         const objectsData = ${JSON.stringify(objectsData, null, 2)};
+        const MAX_PARTICLES = 500;
+        const hasTrails = ${hasTrails};
+        
         const EasingFunctions = ${JSON.stringify(Object.keys(EasingFunctions).reduce((acc, k) => {
             acc[k] = EasingFunctions[k].toString();
+            return acc;
+        }, {}), null, 2)};
+        
+        const FadeFunctions = ${JSON.stringify(Object.keys(FadeFunctions).reduce((acc, k) => {
+            acc[k] = FadeFunctions[k].toString();
             return acc;
         }, {}), null, 2)};
 
@@ -354,30 +380,88 @@ ${elements}
             return d;
         }
 
+        function getSegmentInfo(points) {
+            const segments = [];
+            let totalLength = 0;
+            for (let i = 1; i < points.length; i++) {
+                const prev = points[i - 1];
+                const curr = points[i];
+                let segPoints, segLengths = [], segTotalLength = 0;
+                if (prev.type === 'bezier' && curr.type === 'bezier' && prev.cpOut && curr.cpIn) {
+                    segPoints = getCubicBezierPoints(prev, curr);
+                } else if (prev.type === 'bezier' && prev.cpOut) {
+                    segPoints = getQuadraticBezierPoints(prev, curr);
+                } else {
+                    segPoints = [prev, curr];
+                }
+                for (let j = 1; j < segPoints.length; j++) {
+                    const len = Math.hypot(segPoints[j].x - segPoints[j-1].x, segPoints[j].y - segPoints[j-1].y);
+                    segLengths.push(len);
+                    segTotalLength += len;
+                }
+                segments.push({ index: i - 1, points: segPoints, lengths: segLengths, totalLength: segTotalLength, startLength: totalLength });
+                totalLength += segTotalLength;
+            }
+            return { segments, totalLength };
+        }
+
         function getPointOnPath(points, t) {
             if (!points || points.length < 2) return { x: 0, y: 0, angle: 0 };
-            let length = 0;
-            for (let i = 1; i < points.length; i++) {
-                length += Math.hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y);
-            }
-            const target = t * length;
-            let current = 0;
-            for (let i = 1; i < points.length; i++) {
-                const seg = Math.hypot(points[i].x - points[i-1].x, points[i].y - points[i-1].y);
-                if (current + seg >= target) {
-                    const lt = (target - current) / seg;
-                    const x = points[i-1].x + (points[i].x - points[i-1].x) * lt;
-                    const y = points[i-1].y + (points[i].y - points[i-1].y) * lt;
-                    const angle = Math.atan2(points[i].y - points[i-1].y, points[i].x - points[i-1].x) * 180 / Math.PI;
-                    return { x, y, angle };
+            const { segments, totalLength } = getSegmentInfo(points);
+            const targetLength = Math.max(0, Math.min(1, t)) * totalLength;
+            for (const seg of segments) {
+                if (seg.startLength + seg.totalLength >= targetLength) {
+                    const localTarget = targetLength - seg.startLength;
+                    let accumulated = 0;
+                    for (let j = 0; j < seg.lengths.length; j++) {
+                        if (accumulated + seg.lengths[j] >= localTarget) {
+                            const f = seg.lengths[j] > 0 ? (localTarget - accumulated) / seg.lengths[j] : 0;
+                            const p1 = seg.points[j];
+                            const p2 = seg.points[j + 1];
+                            const x = p1.x + (p2.x - p1.x) * f;
+                            const y = p1.y + (p2.y - p1.y) * f;
+                            const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+                            return { x, y, angle };
+                        }
+                        accumulated += seg.lengths[j];
+                    }
+                    const lastPoint = seg.points[seg.points.length - 1];
+                    const prevPoint = seg.points[seg.points.length - 2];
+                    const angle = Math.atan2(lastPoint.y - prevPoint.y, lastPoint.x - prevPoint.x) * 180 / Math.PI;
+                    return { x: lastPoint.x, y: lastPoint.y, angle };
                 }
-                current += seg;
             }
-            return { x: points[points.length-1].x, y: points[points.length-1].y, angle: 0 };
+            const last = points[points.length - 1];
+            return { x: last.x, y: last.y, angle: 0 };
+        }
+
+        function getCubicBezierPoints(p0, p3) {
+            const p1 = p0.cpOut, p2 = p3.cpIn, points = [];
+            const steps = 20;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps, mt = 1 - t;
+                const x = mt*mt*mt*p0.x + 3*mt*mt*t*p1.x + 3*mt*t*t*p2.x + t*t*t*p3.x;
+                const y = mt*mt*mt*p0.y + 3*mt*mt*t*p1.y + 3*mt*t*t*p2.y + t*t*t*p3.y;
+                points.push({ x, y });
+            }
+            return points;
+        }
+
+        function getQuadraticBezierPoints(p0, p2) {
+            const p1 = p0.cpOut, points = [];
+            const steps = 15;
+            for (let i = 0; i <= steps; i++) {
+                const t = i / steps, mt = 1 - t;
+                const x = mt*mt*p0.x + 2*mt*t*p1.x + t*t*p2.x;
+                const y = mt*mt*p0.y + 2*mt*t*p1.y + t*t*p2.y;
+                points.push({ x, y });
+            }
+            return points;
         }
 
         const pathsLayer = document.getElementById('paths-layer');
         const objectsLayer = document.getElementById('objects-layer');
+        const particlesLayer = document.getElementById('particles-layer');
         const svgNS = 'http://www.w3.org/2000/svg';
 
         pathsData.forEach(path => {
@@ -393,18 +477,74 @@ ${elements}
             }
         });
 
-        function render(time) {
-            objectsLayer.innerHTML = '';
-            objectsData.forEach(obj => {
-                const path = pathsData.find(p => p.id === obj.pathId);
-                if (!path || path.points.length < 2) return;
+        let particles = [];
+        let lastEmitTimes = {};
+        
+        function emitParticle(obj, pos, currentTime) {
+            if (particles.length >= MAX_PARTICLES) particles.shift();
+            if (!obj.trail) return;
+            particles.push({
+                x: pos.x, y: pos.y, color: obj.color, size: obj.trailSize,
+                shape: obj.trailShape, birthTime: currentTime, lifetime: obj.trailLifetime,
+                fadeCurve: obj.trailFade, objId: obj.id
+            });
+        }
+        
+        function updateParticles(currentTime) {
+            particles = particles.filter(p => currentTime - p.birthTime < p.lifetime);
+            if (particles.length > MAX_PARTICLES) particles = particles.slice(-MAX_PARTICLES);
+        }
+        
+        function renderParticles(currentTime) {
+            particlesLayer.innerHTML = '';
+            for (const particle of particles) {
+                const age = currentTime - particle.birthTime;
+                const lifeRatio = age / particle.lifetime;
+                const fadeFn = new Function('t', 'return (' + FadeFunctions[particle.fadeCurve] + ')(t)');
+                const opacity = Math.max(0, Math.min(1, fadeFn(lifeRatio)));
+                let element;
+                if (particle.shape === 'square') {
+                    element = document.createElementNS(svgNS, 'rect');
+                    element.setAttribute('x', particle.x - particle.size / 2);
+                    element.setAttribute('y', particle.y - particle.size / 2);
+                    element.setAttribute('width', particle.size);
+                    element.setAttribute('height', particle.size);
+                } else {
+                    element = document.createElementNS(svgNS, 'circle');
+                    element.setAttribute('cx', particle.x);
+                    element.setAttribute('cy', particle.y);
+                    element.setAttribute('r', particle.size / 2);
+                }
+                element.setAttribute('fill', particle.color);
+                element.setAttribute('opacity', opacity);
+                element.setAttribute('class', 'particle');
+                particlesLayer.appendChild(element);
+            }
+        }
+        
+        function emitParticlesForObject(obj, pos, deltaTime, currentTime) {
+            if (!obj.trail || !pos.visible) return;
+            const lastEmit = lastEmitTimes[obj.id] || 0;
+            const emitInterval = 1 / obj.trailDensity;
+            if (currentTime - lastEmit >= emitInterval) {
+                emitParticle(obj, pos, currentTime);
+                lastEmitTimes[obj.id] = currentTime;
+            }
+        }
 
-                const effDur = obj.duration / obj.speed;
+        function render(time, deltaTime) {
+            objectsLayer.innerHTML = '';
+            for (const obj of objectsData) {
+                const path = pathsData.find(p => p.id === obj.pathId);
+                if (!path || path.points.length < 2) continue;
+
+                const effDur = obj.duration;
                 let localT = time - obj.startTime;
-                if (localT < 0) return;
+                if (localT < 0) continue;
 
                 if (obj.loop === 'repeat') {
                     localT = localT % effDur;
+                    if (localT < 0) localT += effDur;
                 } else if (obj.loop === 'alternate') {
                     const cycle = effDur * 2;
                     const t = localT % cycle;
@@ -418,6 +558,11 @@ ${elements}
                 const easing = new Function('t', 'return (' + EasingFunctions[obj.easing] + ')(t)');
                 const easedT = easing(t);
                 const pos = getPointOnPath(path.points, easedT);
+                pos.visible = true;
+                
+                if (hasTrails) {
+                    emitParticlesForObject(obj, pos, deltaTime, time);
+                }
                 
                 const g = document.createElementNS(svgNS, 'g');
                 let rot = obj.orientToPath ? pos.angle : 0;
@@ -464,7 +609,12 @@ ${elements}
                 el.setAttribute('stroke-width', '2');
                 g.appendChild(el);
                 objectsLayer.appendChild(g);
-            });
+            }
+            
+            if (hasTrails) {
+                updateParticles(time);
+                renderParticles(time);
+            }
         }
 
         let playing = false;
@@ -482,8 +632,12 @@ ${elements}
                 const hasLoop = objectsData.some(o => o.loop !== 'none');
                 currentTime = hasLoop ? 0 : totalDuration;
                 if (!hasLoop) playing = false;
+                if (hasLoop) {
+                    particles = [];
+                    lastEmitTimes = {};
+                }
             }
-            render(currentTime);
+            render(currentTime, delta);
             document.getElementById('current').textContent = currentTime.toFixed(2);
             if (playing) rafId = requestAnimationFrame(animate);
         }
@@ -505,11 +659,13 @@ ${elements}
             playing = false;
             if (rafId) cancelAnimationFrame(rafId);
             currentTime = 0;
-            render(0);
+            particles = [];
+            lastEmitTimes = {};
+            render(0, 0);
             document.getElementById('current').textContent = '0.00';
         });
 
-        render(0);
+        render(0, 0);
     <\/script>
 </body>
 </html>`;

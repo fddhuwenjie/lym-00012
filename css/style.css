@@ -603,3 +603,119 @@ select:focus, input:focus {
 .hidden {
     display: none !important;
 }
+
+.trail-options {
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+}
+
+.group-objects-checkboxes {
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 8px;
+}
+
+.group-objects-checkboxes label {
+    display: block;
+    padding: 4px 8px;
+    margin-bottom: 2px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.group-objects-checkboxes label:hover {
+    background: #f0f0f0;
+}
+
+.group-item {
+    background: linear-gradient(135deg, #667eea33, #764ba233);
+    border: 2px solid #667eea;
+}
+
+.group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.group-toggle {
+    cursor: pointer;
+    user-select: none;
+    font-size: 12px;
+    color: #667eea;
+    margin-right: 8px;
+}
+
+.group-children {
+    margin-left: 20px;
+    border-left: 2px solid #667eea66;
+    padding-left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.group-children.hidden {
+    display: none;
+}
+
+.group-children .object-item {
+    margin-bottom: 0;
+}
+
+.btn-warning {
+    background: #faad14;
+    border-color: #faad14;
+    color: white;
+}
+
+.btn-warning:hover {
+    background: #d48806;
+    border-color: #d48806;
+}
+
+.timeline-track.group-track .timeline-track-label {
+    background: linear-gradient(135deg, #667eea33, #764ba233);
+    font-weight: 600;
+}
+
+.timeline-track.group-track .timeline-block {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.timeline-track.child-track .timeline-track-label {
+    padding-left: 25px;
+    background: #f0f4ff;
+}
+
+.timeline-track.child-track .timeline-block {
+    opacity: 0.8;
+}
+
+.group-badge {
+    display: inline-block;
+    background: #667eea;
+    color: white;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    margin-left: 4px;
+}
+
+.reverse-playing {
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.particle {
+    pointer-events: none;
+}

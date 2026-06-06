@@ -52,6 +52,8 @@
                     <div class="tool-group">
                         <button id="btn-clear-path" class="btn btn-danger btn-small">清空路径</button>
                         <button id="btn-add-object" class="btn btn-success btn-small">+ 添加动画对象</button>
+                        <button id="btn-create-group" class="btn btn-primary btn-small">+ 创建组</button>
+                        <button id="btn-reverse-play" class="btn btn-warning btn-small">⏪ 路径反走查</button>
                     </div>
                 </div>
 
@@ -65,6 +67,7 @@
                         <rect width="800" height="600" fill="#fafafa" stroke="#ddd" stroke-width="1"/>
                         <g id="grid-layer"></g>
                         <g id="paths-layer"></g>
+                        <g id="particles-layer"></g>
                         <g id="handles-layer"></g>
                         <g id="objects-layer"></g>
                     </svg>
@@ -192,9 +195,107 @@
             <div class="form-group">
                 <label><input type="checkbox" id="obj-orient"> 朝向随路径切线方向</label>
             </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="obj-trail"> 启用轨迹粒子尾迹</label>
+            </div>
+            <div id="trail-options" class="trail-options hidden">
+                <div class="form-group">
+                    <label>粒子形状</label>
+                    <select id="obj-trail-shape">
+                        <option value="circle">圆点</option>
+                        <option value="square">方块</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>粒子密度 (每秒)</label>
+                    <input type="range" id="obj-trail-density" min="5" max="60" value="20">
+                    <span id="obj-trail-density-value">20</span>
+                </div>
+                <div class="form-group">
+                    <label>粒子生命周期 (秒)</label>
+                    <input type="range" id="obj-trail-lifetime" min="0.2" max="3" step="0.1" value="1">
+                    <span id="obj-trail-lifetime-value">1.0</span>s
+                </div>
+                <div class="form-group">
+                    <label>尾迹长度</label>
+                    <input type="range" id="obj-trail-length" min="10" max="200" value="50">
+                    <span id="obj-trail-length-value">50</span>
+                </div>
+                <div class="form-group">
+                    <label>粒子大小</label>
+                    <input type="range" id="obj-trail-size" min="1" max="10" value="3">
+                    <span id="obj-trail-size-value">3</span>px
+                </div>
+                <div class="form-group">
+                    <label>淡出曲线</label>
+                    <select id="obj-trail-fade">
+                        <option value="linear">线性</option>
+                        <option value="ease-in">缓入 (快→慢)</option>
+                        <option value="ease-out">缓出 (慢→快)</option>
+                        <option value="ease-in-out">缓入缓出</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>所属组</label>
+                <select id="obj-group">
+                    <option value="">-- 无组 --</option>
+                </select>
+            </div>
             <div class="modal-actions">
                 <button class="btn" id="modal-cancel">取消</button>
                 <button class="btn btn-primary" id="modal-save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="group-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3 id="group-modal-title">编辑组</h3>
+            <div class="form-group">
+                <label>组名称</label>
+                <input type="text" id="group-name" placeholder="输入组名称">
+            </div>
+            <div class="form-group">
+                <label>组总时长 (秒)</label>
+                <input type="number" id="group-duration" min="0.5" step="0.1" value="5">
+            </div>
+            <div class="form-group">
+                <label>群体起始相位 (0~1)</label>
+                <input type="range" id="group-phase" min="0" max="1" step="0.01" value="0">
+                <span id="group-phase-value">0.00</span>
+            </div>
+            <div class="form-group">
+                <label>对象间均匀间隔</label>
+                <select id="group-spacing-mode">
+                    <option value="arc">等弧长间隔</option>
+                    <option value="time">等时间间隔</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>间隔数量 (N个对象形成N个间隔)</label>
+                <input type="number" id="group-spacing" min="1" step="1" value="5">
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="group-reverse"> 反向播放</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="group-mirror-h"> 水平镜像翻转</label>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="group-mirror-v"> 垂直镜像翻转</label>
+            </div>
+            <div class="form-group">
+                <label>组内对象</label>
+                <div id="group-objects-list" class="group-objects-checkboxes"></div>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="group-trail"> 整组启用轨迹粒子尾迹</label>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" id="group-modal-cancel">取消</button>
+                <button class="btn btn-primary" id="group-modal-save">保存</button>
+                <button class="btn btn-danger" id="group-modal-delete">删除组</button>
             </div>
         </div>
     </div>

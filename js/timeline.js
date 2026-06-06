@@ -51,33 +51,18 @@ class Timeline {
     renderTracks() {
         this.tracksContainer.innerHTML = '';
         
+        const processedGroups = new Set();
+        
         for (const obj of this.animationEngine.objects) {
-            const track = document.createElement('div');
-            track.className = 'timeline-track';
-            
-            const label = document.createElement('div');
-            label.className = 'timeline-track-label';
-            label.innerHTML = `
-                <span class="object-color-dot" style="background:${obj.color}"></span>
-                <span>${obj.name}</span>
-            `;
-            track.appendChild(label);
-            
-            const content = document.createElement('div');
-            content.className = 'timeline-track-content';
-            content.style.width = (this.animationEngine.totalDuration * this.pixelsPerSecond) + 'px';
-            
-            const block = document.createElement('div');
-            block.className = 'timeline-block';
-            block.dataset.objId = obj.id;
-            block.style.left = (obj.startTime * this.pixelsPerSecond) + 'px';
-            block.style.width = (obj.duration / obj.speed * this.pixelsPerSecond) + 'px';
-            block.style.background = `linear-gradient(135deg, ${obj.color}99, ${obj.color})`;
-            block.textContent = `${obj.name} (${(obj.duration / obj.speed).toFixed(1)}s)`;
-            
-            content.appendChild(block);
-            track.appendChild(content);
-            this.tracksContainer.appendChild(track);
+            if (obj.groupId && !processedGroups.has(obj.groupId)) {
+                const group = this.animationEngine.groups.find(g => g.id === obj.groupId);
+                if (group) {
+                    processedGroups.add(group.id);
+                    this.renderGroupTrack(group);
+                }
+            } else if (!obj.groupId) {
+                this.renderObjectTrack(obj);
+            }
         }
         
         const playhead = document.createElement('div');
@@ -85,6 +70,102 @@ class Timeline {
         playhead.id = 'timeline-playhead';
         playhead.style.left = (this.animationEngine.currentTime * this.pixelsPerSecond) + 'px';
         this.tracksContainer.appendChild(playhead);
+    }
+    
+    renderGroupTrack(group) {
+        const track = document.createElement('div');
+        track.className = 'timeline-track group-track';
+        track.dataset.groupId = group.id;
+        
+        const label = document.createElement('div');
+        label.className = 'timeline-track-label';
+        label.innerHTML = `
+            <span class="group-toggle" data-group-id="${group.id}">${group.expanded ? '▼' : '▶'}</span>
+            <span class="object-color-dot" style="background: linear-gradient(135deg, #667eea, #764ba2)"></span>
+            <span>${group.name} <span class="group-badge">${group.objectIds.length}个</span></span>
+        `;
+        track.appendChild(label);
+        
+        const content = document.createElement('div');
+        content.className = 'timeline-track-content';
+        content.style.width = (this.animationEngine.totalDuration * this.pixelsPerSecond) + 'px';
+        
+        const block = document.createElement('div');
+        block.className = 'timeline-block';
+        block.dataset.groupId = group.id;
+        block.style.left = '0px';
+        block.style.width = (group.duration * this.pixelsPerSecond) + 'px';
+        block.style.background = 'linear-gradient(135deg, #667eea, #764ba2)';
+        block.textContent = `${group.name} (${group.duration.toFixed(1)}s)`;
+        
+        content.appendChild(block);
+        track.appendChild(content);
+        this.tracksContainer.appendChild(track);
+        
+        if (group.expanded) {
+            group.objectIds.forEach((objId, index) => {
+                const obj = this.animationEngine.objects.find(o => o.id === objId);
+                if (obj) {
+                    this.renderObjectTrack(obj, true, index);
+                }
+            });
+        }
+        
+        const toggleBtn = label.querySelector('.group-toggle');
+        toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            group.expanded = !group.expanded;
+            this.update();
+        });
+    }
+    
+    renderObjectTrack(obj, isChild = false, childIndex = 0) {
+        const track = document.createElement('div');
+        track.className = 'timeline-track' + (isChild ? ' child-track' : '');
+        if (isChild) {
+            track.dataset.parentGroupId = obj.groupId;
+        }
+        
+        const label = document.createElement('div');
+        label.className = 'timeline-track-label';
+        
+        if (isChild) {
+            label.innerHTML = `
+                <span style="display:inline-block;width:12px;"></span>
+                <span class="object-color-dot" style="background:${obj.color}"></span>
+                <span>${childIndex + 1}. ${obj.name}</span>
+            `;
+        } else {
+            label.innerHTML = `
+                <span class="object-color-dot" style="background:${obj.color}"></span>
+                <span>${obj.name}</span>
+            `;
+        }
+        track.appendChild(label);
+        
+        const content = document.createElement('div');
+        content.className = 'timeline-track-content';
+        content.style.width = (this.animationEngine.totalDuration * this.pixelsPerSecond) + 'px';
+        
+        const group = obj.groupId ? this.animationEngine.groups.find(g => g.id === obj.groupId) : null;
+        const duration = group ? group.duration : (obj.duration / obj.speed);
+        const startTime = group ? 0 : obj.startTime;
+        
+        const block = document.createElement('div');
+        block.className = 'timeline-block';
+        block.dataset.objId = obj.id;
+        block.style.left = (startTime * this.pixelsPerSecond) + 'px';
+        block.style.width = (duration * this.pixelsPerSecond) + 'px';
+        block.style.background = `linear-gradient(135deg, ${obj.color}99, ${obj.color})`;
+        block.textContent = `${obj.name} (${duration.toFixed(1)}s)`;
+        
+        if (isChild) {
+            block.style.opacity = '0.7';
+        }
+        
+        content.appendChild(block);
+        track.appendChild(content);
+        this.tracksContainer.appendChild(track);
     }
     
     updatePlayhead(time) {
@@ -97,10 +178,10 @@ class Timeline {
     bindEvents() {
         this.tracksContainer.addEventListener('mousedown', (e) => {
             const block = e.target.closest('.timeline-block');
-            if (block) {
+            if (block && block.dataset.objId) {
                 const objId = block.dataset.objId;
                 const obj = this.animationEngine.objects.find(o => o.id === objId);
-                if (obj) {
+                if (obj && !obj.groupId) {
                     this.draggingBlock = { obj, block };
                     this.dragStartTime = obj.startTime;
                     this.dragStartX = e.clientX;
@@ -144,6 +225,7 @@ class Timeline {
         
         this.tracksContainer.addEventListener('click', (e) => {
             if (e.target.closest('.timeline-block')) return;
+            if (e.target.closest('.group-toggle')) return;
             
             const rect = this.tracksContainer.getBoundingClientRect();
             const labelWidth = 100;
